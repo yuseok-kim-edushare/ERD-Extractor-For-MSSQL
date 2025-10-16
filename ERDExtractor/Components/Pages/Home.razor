@@ -1,0 +1,235 @@
+﻿@page "/"
+@using ERDExtractor.Models
+@using ERDExtractor.Services
+@using Microsoft.JSInterop
+@inject DatabaseService DatabaseService
+@inject ErdService ErdService
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>ERD Extractor for MS SQL Server</PageTitle>
+
+<div class="container mt-4">
+    <h1 class="mb-4">ERD Extractor for MS SQL Server</h1>
+    
+    @if (!isConnected)
+    {
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Database Connection</h5>
+                
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Host</label>
+                        <input type="text" class="form-control" @bind="connection.Host" placeholder="localhost" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Port</label>
+                        <input type="text" class="form-control" @bind="connection.Port" placeholder="1433" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" @bind="connection.Username" placeholder="sa" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" @bind="connection.Password" />
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Database Name</label>
+                        <input type="text" class="form-control" @bind="connection.DatabaseName" placeholder="MyDatabase" />
+                    </div>
+                </div>
+                
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-danger mt-3" role="alert">
+                        @errorMessage
+                    </div>
+                }
+                
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div class="alert alert-success mt-3" role="alert">
+                        @successMessage
+                    </div>
+                }
+                
+                <div class="mt-3">
+                    <button class="btn btn-primary" @onclick="ConnectAndExtractSchema" disabled="@isLoading">
+                        @if (isLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            <span>Connecting...</span>
+                        }
+                        else
+                        {
+                            <span>Connect & Extract Schema</span>
+                        }
+                    </button>
+                    <button class="btn btn-outline-secondary ms-2" @onclick="LoadDemoData">
+                        <span>Try Demo (Sample E-commerce DB)</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-success mb-3" role="alert">
+            @if (isDemoMode)
+            {
+                <span>Using Demo Data (Sample E-commerce Database)</span>
+            }
+            else
+            {
+                <span>Connected to database: <strong>@connection.DatabaseName</strong></span>
+            }
+            <button class="btn btn-sm btn-outline-secondary float-end" @onclick="ResetConnection">Disconnect</button>
+        </div>
+        
+        @if (schema != null && schema.Tables.Count > 0)
+        {
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Schema Information</h5>
+                    <p>Found <strong>@schema.Tables.Count</strong> tables</p>
+                    <button class="btn btn-success" @onclick="GenerateERD">Generate ERD</button>
+                    @if (!string.IsNullOrEmpty(erdXml))
+                    {
+                        <button class="btn btn-secondary ms-2" @onclick="DownloadERD">Download ERD (XML)</button>
+                    }
+                </div>
+            </div>
+            
+            @if (!string.IsNullOrEmpty(erdXml))
+            {
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">ERD Diagram</h5>
+                        <div class="alert alert-info">
+                            <p><strong>How to use:</strong></p>
+                            <ol>
+                                <li>Click "Download ERD (XML)" button above to download the diagram file</li>
+                                <li>Go to <a href="https://app.diagrams.net/" target="_blank">diagrams.net</a></li>
+                                <li>Click "File" → "Open from" → "Device" and select the downloaded XML file</li>
+                                <li>Edit and customize your ERD diagram interactively</li>
+                            </ol>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <h6>Tables in Schema:</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Table</th>
+                                            <th>Columns</th>
+                                            <th>Foreign Keys</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var table in schema.Tables)
+                                        {
+                                            <tr>
+                                                <td><strong>@table.Schema.@table.TableName</strong></td>
+                                                <td>@table.Columns.Count</td>
+                                                <td>@table.ForeignKeys.Count</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    private DatabaseConnection connection = new();
+    private DatabaseSchema? schema;
+    private string? erdXml;
+    private bool isConnected = false;
+    private bool isDemoMode = false;
+    private bool isLoading = false;
+    private string? errorMessage;
+    private string? successMessage;
+
+    private async Task ConnectAndExtractSchema()
+    {
+        errorMessage = null;
+        successMessage = null;
+        isLoading = true;
+
+        try
+        {
+            // Test connection
+            var connectionSuccess = await DatabaseService.TestConnectionAsync(connection);
+            
+            if (!connectionSuccess)
+            {
+                errorMessage = "Failed to connect to database. Please check your connection details.";
+                isLoading = false;
+                return;
+            }
+
+            successMessage = "Connection successful!";
+            
+            // Extract schema
+            schema = await DatabaseService.GetDatabaseSchemaAsync(connection);
+            isConnected = true;
+            isDemoMode = false;
+            
+            successMessage = $"Successfully extracted schema with {schema.Tables.Count} tables.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void LoadDemoData()
+    {
+        schema = DemoDataService.GetDemoSchema();
+        isConnected = true;
+        isDemoMode = true;
+        connection.DatabaseName = "DemoEcommerceDB";
+    }
+
+    private void GenerateERD()
+    {
+        if (schema != null)
+        {
+            erdXml = ErdService.GenerateDrawIoXml(schema);
+        }
+    }
+
+    private async Task DownloadERD()
+    {
+        if (!string.IsNullOrEmpty(erdXml))
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(erdXml);
+            var base64 = Convert.ToBase64String(bytes);
+            var fileName = $"ERD_{connection.DatabaseName}_{DateTime.Now:yyyyMMdd_HHmmss}.drawio";
+            
+            await JSRuntime.InvokeVoidAsync("downloadFileFromBase64", fileName, base64);
+        }
+    }
+
+    private void ResetConnection()
+    {
+        isConnected = false;
+        isDemoMode = false;
+        schema = null;
+        erdXml = null;
+        errorMessage = null;
+        successMessage = null;
+    }
+}
