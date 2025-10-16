@@ -1,11 +1,14 @@
-using ERDExtractor.Client.Pages;
 using ERDExtractor.Components;
+using ERDExtractor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveWebAssemblyComponents();
+
+builder.Services.AddScoped<DatabaseService>();
+builder.Services.AddScoped<ErdService>();
 
 var app = builder.Build();
 
