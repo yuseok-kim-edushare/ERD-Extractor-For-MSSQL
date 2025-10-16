@@ -67,6 +67,9 @@
                             <span>Connect & Extract Schema</span>
                         }
                     </button>
+                    <button class="btn btn-outline-secondary ms-2" @onclick="LoadDemoData">
+                        <span>Try Demo (Sample E-commerce DB)</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -74,7 +77,14 @@
     else
     {
         <div class="alert alert-success mb-3" role="alert">
-            Connected to database: <strong>@connection.DatabaseName</strong>
+            @if (isDemoMode)
+            {
+                <span>Using Demo Data (Sample E-commerce Database)</span>
+            }
+            else
+            {
+                <span>Connected to database: <strong>@connection.DatabaseName</strong></span>
+            }
             <button class="btn btn-sm btn-outline-secondary float-end" @onclick="ResetConnection">Disconnect</button>
         </div>
         
@@ -143,6 +153,7 @@
     private DatabaseSchema? schema;
     private string? erdXml;
     private bool isConnected = false;
+    private bool isDemoMode = false;
     private bool isLoading = false;
     private string? errorMessage;
     private string? successMessage;
@@ -170,6 +181,7 @@
             // Extract schema
             schema = await DatabaseService.GetDatabaseSchemaAsync(connection);
             isConnected = true;
+            isDemoMode = false;
             
             successMessage = $"Successfully extracted schema with {schema.Tables.Count} tables.";
         }
@@ -181,6 +193,14 @@
         {
             isLoading = false;
         }
+    }
+
+    private void LoadDemoData()
+    {
+        schema = DemoDataService.GetDemoSchema();
+        isConnected = true;
+        isDemoMode = true;
+        connection.DatabaseName = "DemoEcommerceDB";
     }
 
     private void GenerateERD()
@@ -206,6 +226,7 @@
     private void ResetConnection()
     {
         isConnected = false;
+        isDemoMode = false;
         schema = null;
         erdXml = null;
         errorMessage = null;
